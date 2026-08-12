@@ -1,0 +1,606 @@
+(function () {
+  "use strict";
+
+  var SUPABASE_URL = "https://uksrouxvpprjfyubejeo.supabase.co";
+  var SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVrc3JvdXh2cHByamZ5dWJlamVvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY1MjY1NzMsImV4cCI6MjEwMjEwMjU3M30.gGBhQGfQfcpzYAbigks0LrZ61bWsVix1Wr22miCpo5k";
+  var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  function getDeviceId() {
+    var id = localStorage.getItem("iri_device_id");
+    if (!id) {
+      id = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : (String(Date.now()) + "-" + Math.random().toString(16).slice(2));
+      localStorage.setItem("iri_device_id", id);
+    }
+    return id;
+  }
+  var deviceId = getDeviceId();
+
+  var TOTAL_QUESTIONS = 6;
+
+  var MODEL_LABELS = {
+    "claude-sonnet-5": "Sonnet 5",
+    "claude-haiku-4-5-20251001": "Haiku 4.5",
+    "claude-opus-5": "Opus 5"
+  };
+
+  var EXAMPLE_PROMPTS = [
+    "잔고 화면에서 금액을 더 쉽게 볼 수 있게 해주세요.",
+    "주문 목록에서 원하는 상품을 빠르게 찾을 수 있게 해주세요.",
+    "알림이 너무 많이 와서 중요한 것만 보고 싶어요."
+  ];
+
+  var SYSTEM_PROMPT = [
+    "당신은 \"IT Requirement Interviewer\"라는 이름의 요구사항 분석 Agent입니다.",
+    "사용자는 현업 담당자이며, 한 줄짜리 모호한 요청(예: \"잔고를 보기 쉽게 해주세요\")을 던집니다.",
+    "당신의 임무는 짧고 구체적인 질문을 한 번에 하나씩 던져가며, 그 요청을 개발자가 바로 착수할 수 있는",
+    "수준의 명확한 요구사항 문서로 키워가는 것입니다.",
+    "",
+    "이 인터뷰는 정확히 " + TOTAL_QUESTIONS + "개의 질문 카드로 진행됩니다. 사용자의 메시지 끝에는 지금이 몇 번째 질문 차례인지",
+    "[시스템 안내: ...] 형식의 안내가 붙어 있으니 반드시 참고하십시오.",
+    "",
+    "규칙:",
+    "1. 한 턴에 질문은 정확히 하나만 합니다. 질문 문장은 한두 문장으로 짧게 씁니다.",
+    "2. 질문은 실제 화면/기능 설계에 영향을 주는 구체적인 것이어야 합니다 (예: 어떤 정보를 우선 노출할지, 데이터가 없거나 0인 경우 표시 방법, 값이 매우 크거나 작을 때 처리 방법, 우선순위/정렬, 대상 사용자/디바이스, 예외/에러 상태 등). 매 요청 도메인에 맞게 스스로 판단하고, 앞선 답변과 중복되지 않게 하세요.",
+    "3. questionOptions에는 사용자가 버튼으로 바로 고를 수 있는 짧고 구체적인 보기 2~4개를 항상 제시하세요 (필수). 보기는 서로 명확히 구분되는 실제 선택지여야 합니다.",
+    "4. requirementMarkdown 필드에는 지금까지 파악된 요구사항 전체를 마크다운으로 누적 작성합니다 (이번 턴에서 새로 안 것만이 아니라 전체 최신 상태). 한국어로, 개발자가 읽고 바로 구현할 수 있도록 짧은 '## 섹션 제목' 아래 한 줄짜리 불릿(-)으로 구조화하세요. 문단은 피하고 불릿을 우선하세요. 섹션 예: ## 목적, ## 화면/정보 우선순위, ## 표시 규칙, ## 예외 처리, ## 완료 기준 등 상황에 맞게 조정.",
+    "5. completeness는 0~100 사이 정수로, 대략 (지금까지 답변된 질문 수 / " + TOTAL_QUESTIONS + ") * 100 에 맞춰 현실적으로 올리세요. 이전 턴보다 낮아지면 안 됩니다.",
+    "6. 사용자 메시지에 [시스템 안내: 마지막 질문] 이라고 표시되면, 그 답변까지 반영해 반드시 done=true로 설정하고 completeness=100으로 마무리하며, nextQuestion은 빈 문자열, questionOptions는 빈 배열, closingMessage에 완료 메시지를 적습니다. 그보다 일찍 충분히 명확해졌다고 판단되면 더 일찍 done=true로 설정해도 됩니다.",
+    "7. 반드시 record_requirement_step 도구 호출로만 응답하십시오. 일반 텍스트로 답하지 마십시오.",
+    "8. 톤은 친절하고 간결한 컨설턴트 톤을 유지하세요."
+  ].join("\n");
+
+  var REQUIREMENT_TOOL = {
+    name: "record_requirement_step",
+    description: "이번 턴의 다음 질문(및 보기)과, 지금까지 누적된 요구사항 문서 및 완성도를 기록합니다.",
+    input_schema: {
+      type: "object",
+      properties: {
+        nextQuestion: { type: "string", description: "사용자에게 물을 다음 질문 하나. done이 true면 빈 문자열." },
+        questionOptions: {
+          type: "array",
+          items: { type: "string" },
+          description: "nextQuestion에 대한 2~4개의 짧고 구체적인 버튼형 보기. done이 아니면 필수."
+        },
+        requirementMarkdown: { type: "string", description: "지금까지 파악된 요구사항 전체 누적 마크다운 문서 (한국어, ## 섹션 + - 불릿 형식)." },
+        completeness: { type: "integer", minimum: 0, maximum: 100, description: "요구사항 완성도 (0-100), 이전 값보다 낮아질 수 없음." },
+        done: { type: "boolean", description: "인터뷰가 끝났는지 여부." },
+        closingMessage: { type: "string", description: "done이 true일 때 사용자에게 보여줄 마무리 메시지." }
+      },
+      required: ["nextQuestion", "questionOptions", "requirementMarkdown", "completeness", "done"]
+    }
+  };
+
+  var state = {
+    model: "claude-sonnet-5",
+    messages: [],
+    lastToolUseId: null,
+    done: false,
+    questionsAsked: 0,   // number of question cards already shown (0..TOTAL_QUESTIONS)
+    questionsAnswered: 0, // number of answers submitted so far
+    completeness: 0,
+    finalMarkdown: "",
+    screen: "landing",   // landing | intro | quiz | done
+    currentQuestion: null,
+    currentOptions: [],
+    closingMessage: null
+  };
+
+  var el = {
+    settingsBtn: document.getElementById("settingsBtn"),
+    settingsPanel: document.getElementById("settingsPanel"),
+    modelSelect: document.getElementById("modelSelect"),
+    modelBadge: document.getElementById("modelBadge"),
+    resetBtn: document.getElementById("resetBtn"),
+    landingScreen: document.getElementById("landingScreen"),
+    landingStartBtn: document.getElementById("landingStartBtn"),
+    introScreen: document.getElementById("introScreen"),
+    initialInput: document.getElementById("initialInput"),
+    exampleChips: document.getElementById("exampleChips"),
+    startBtn: document.getElementById("startBtn"),
+    quizScreen: document.getElementById("quizScreen"),
+    statBlock: document.getElementById("statBlock"),
+    pctValue: document.getElementById("pctValue"),
+    meterFill: document.getElementById("meterFill"),
+    docContent: document.getElementById("docContent")
+  };
+
+  function updateModelBadge() {
+    el.modelBadge.textContent = MODEL_LABELS[state.model] || state.model;
+  }
+
+  function shakeInvalid(target) {
+    target.classList.remove("shake");
+    void target.offsetWidth; // restart animation
+    target.classList.add("shake");
+    target.focus();
+    target.addEventListener("animationend", function handler() {
+      target.classList.remove("shake");
+      target.removeEventListener("animationend", handler);
+    });
+  }
+
+  EXAMPLE_PROMPTS.forEach(function (prompt) {
+    var chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "example-chip";
+    chip.textContent = prompt;
+    chip.addEventListener("click", function () {
+      el.initialInput.value = prompt;
+      el.initialInput.focus();
+    });
+    el.exampleChips.appendChild(chip);
+  });
+
+  el.settingsBtn.addEventListener("click", function () {
+    el.settingsPanel.classList.toggle("open");
+  });
+  document.addEventListener("click", function (e) {
+    if (!el.settingsPanel.contains(e.target) && e.target !== el.settingsBtn && !el.settingsBtn.contains(e.target)) {
+      el.settingsPanel.classList.remove("open");
+    }
+  });
+  el.modelSelect.addEventListener("change", function () {
+    state.model = el.modelSelect.value;
+    updateModelBadge();
+    sb.from("device_settings")
+      .upsert({ device_id: deviceId, model: state.model, updated_at: new Date().toISOString() })
+      .then(function (res) {
+        if (res.error) console.error("Supabase settings save failed:", res.error);
+      });
+  });
+
+  function persistSession() {
+    var row = {
+      device_id: deviceId,
+      screen: state.screen,
+      messages: state.messages,
+      last_tool_use_id: state.lastToolUseId,
+      done: state.done,
+      questions_asked: state.questionsAsked,
+      questions_answered: state.questionsAnswered,
+      completeness: state.completeness,
+      final_markdown: state.finalMarkdown,
+      current_question: state.currentQuestion,
+      current_options: state.currentOptions,
+      closing_message: state.closingMessage,
+      updated_at: new Date().toISOString()
+    };
+    sb.from("interview_sessions").upsert(row).then(function (res) {
+      if (res.error) console.error("Supabase session save failed:", res.error);
+    });
+  }
+
+  async function loadFromSupabase() {
+    try {
+      var settingsRes = await sb.from("device_settings").select("model").eq("device_id", deviceId).maybeSingle();
+      if (settingsRes.data && settingsRes.data.model) state.model = settingsRes.data.model;
+    } catch (e) { /* fall back to default model */ }
+    el.modelSelect.value = state.model;
+    updateModelBadge();
+
+    try {
+      var sessionRes = await sb.from("interview_sessions").select("*").eq("device_id", deviceId).maybeSingle();
+      var row = sessionRes.data;
+      if (row) {
+        state.messages = row.messages || [];
+        state.lastToolUseId = row.last_tool_use_id;
+        state.done = row.done;
+        state.questionsAsked = row.questions_asked;
+        state.questionsAnswered = row.questions_answered;
+        state.completeness = row.completeness;
+        state.finalMarkdown = row.final_markdown || "";
+        state.currentQuestion = row.current_question;
+        state.currentOptions = row.current_options || [];
+        state.closingMessage = row.closing_message;
+        state.screen = row.screen || "landing";
+        rehydrateScreen();
+      }
+    } catch (e) { /* start fresh if the session can't be loaded */ }
+  }
+
+  function rehydrateScreen() {
+    setCompleteness(state.completeness);
+    updateDoc(state.finalMarkdown);
+    if (state.screen === "intro") {
+      el.landingScreen.style.display = "none";
+      el.introScreen.style.display = "flex";
+    } else if (state.done || state.screen === "done") {
+      el.landingScreen.style.display = "none";
+      el.introScreen.style.display = "none";
+      el.quizScreen.style.display = "block";
+      renderDone(state.closingMessage);
+    } else if (state.screen === "quiz") {
+      el.landingScreen.style.display = "none";
+      el.introScreen.style.display = "none";
+      el.quizScreen.style.display = "block";
+      renderQuestionCard(state.questionsAsked, state.currentQuestion || "", state.currentOptions || []);
+    }
+  }
+
+  el.resetBtn.addEventListener("click", function () {
+    resetSession();
+  });
+
+  el.landingStartBtn.addEventListener("click", function () {
+    state.screen = "intro";
+    el.landingScreen.style.display = "none";
+    el.introScreen.style.display = "flex";
+    el.initialInput.focus();
+    persistSession();
+  });
+
+  function resetSession() {
+    state.messages = [];
+    state.lastToolUseId = null;
+    state.done = false;
+    state.questionsAsked = 0;
+    state.questionsAnswered = 0;
+    state.completeness = 0;
+    state.finalMarkdown = "";
+    state.screen = "intro";
+    state.currentQuestion = null;
+    state.currentOptions = [];
+    state.closingMessage = null;
+    el.initialInput.value = "";
+    el.quizScreen.innerHTML = "";
+    el.quizScreen.style.display = "none";
+    setCompleteness(0);
+    var fresh = document.createElement("div");
+    fresh.className = "empty-doc";
+    fresh.id = "docContent";
+    fresh.textContent = "질문에 답하면 이 영역에 요구사항 문서가 실시간으로 채워집니다.";
+    el.docContent.replaceWith(fresh);
+    el.docContent = fresh;
+    el.landingScreen.style.display = "none";
+    el.introScreen.style.display = "flex";
+    persistSession();
+  }
+
+  function escapeHtml(str) {
+    return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  function inlineFormat(str) {
+    return escapeHtml(str).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+  }
+
+  function parseSections(md) {
+    var lines = (md || "").split("\n");
+    var sections = [];
+    var current = null;
+    lines.forEach(function (raw) {
+      var line = raw.trim();
+      if (!line) return;
+      var h = line.match(/^#{1,3}\s+(.*)/);
+      if (h) {
+        current = { title: h[1], items: [] };
+        sections.push(current);
+      } else if (/^[-*]\s+/.test(line)) {
+        if (!current) { current = { title: "", items: [] }; sections.push(current); }
+        current.items.push({ type: "li", text: line.replace(/^[-*]\s+/, "") });
+      } else {
+        if (!current) { current = { title: "", items: [] }; sections.push(current); }
+        current.items.push({ type: "p", text: line });
+      }
+    });
+    return sections;
+  }
+
+  function renderDoc(md) {
+    var sections = parseSections(md);
+    if (!sections.length) return "";
+    var html = "";
+    sections.forEach(function (sec, idx) {
+      html += '<div class="doc-card">';
+      html += '<div class="eyebrow">SECTION ' + String(idx + 1).padStart(2, "0") + "</div>";
+      if (sec.title) html += '<h3 class="doc-card-title">' + inlineFormat(sec.title) + "</h3>";
+      var lis = sec.items.filter(function (i) { return i.type === "li"; });
+      var ps = sec.items.filter(function (i) { return i.type === "p"; });
+      if (lis.length) {
+        html += '<ul class="doc-card-list">' + lis.map(function (i) { return "<li>" + inlineFormat(i.text) + "</li>"; }).join("") + "</ul>";
+      }
+      ps.forEach(function (p) { html += '<p class="doc-card-p">' + inlineFormat(p.text) + "</p>"; });
+      html += "</div>";
+    });
+    return html;
+  }
+
+  var lastRenderedPct = 0;
+  function setCompleteness(pct) {
+    pct = Math.max(0, Math.min(100, Math.round(pct)));
+    el.pctValue.innerHTML = pct + '<span class="unit">%</span>';
+    el.meterFill.style.width = pct + "%";
+    if (pct > lastRenderedPct) {
+      el.statBlock.classList.remove("pulse");
+      void el.statBlock.offsetWidth;
+      el.statBlock.classList.add("pulse");
+    }
+    lastRenderedPct = pct;
+  }
+
+  function updateDoc(md) {
+    var html = renderDoc(md);
+    var wrap = document.createElement("div");
+    wrap.id = "docContent";
+    if (html) {
+      wrap.innerHTML = html;
+    } else {
+      wrap.className = "empty-doc";
+      wrap.textContent = "질문에 답하면 이 영역에 요구사항 문서가 실시간으로 채워집니다.";
+    }
+    el.docContent.replaceWith(wrap);
+    el.docContent = wrap;
+  }
+
+  function buildHistory() {
+    var pairs = [];
+    for (var i = 1; i < state.messages.length - 1; i += 2) {
+      var qMsg = state.messages[i];
+      var aMsg = state.messages[i + 1];
+      if (!qMsg || !aMsg) break;
+      var toolUse = null;
+      (qMsg.content || []).forEach(function (c) { if (c.type === "tool_use") toolUse = c; });
+      if (!toolUse || !toolUse.input || !toolUse.input.nextQuestion) continue;
+      var answerBlock = aMsg.content && aMsg.content[0];
+      var answerRaw = (answerBlock && answerBlock.content) || "";
+      var answer = String(answerRaw).replace(/\n\n\[시스템 안내:[^\]]*\]\s*$/, "");
+      pairs.push({ question: toolUse.input.nextQuestion, answer: answer });
+    }
+    return pairs;
+  }
+
+  function historyMarkup() {
+    var pairs = buildHistory();
+    if (!pairs.length) return "";
+    var items = pairs.map(function (p) {
+      return (
+        '<div class="history-item">' +
+          '<p class="history-q">Q. ' + escapeHtml(p.question) + '</p>' +
+          '<p class="history-a">A. ' + escapeHtml(p.answer) + '</p>' +
+        '</div>'
+      );
+    }).join("");
+    return (
+      '<button type="button" class="history-toggle" id="historyToggle">지난 답변 보기 (' + pairs.length + ')</button>' +
+      '<div class="history-list" id="historyList">' + items + '</div>'
+    );
+  }
+
+  function progressMarkup(questionNumber) {
+    var segs = "";
+    for (var i = 1; i <= TOTAL_QUESTIONS; i++) {
+      segs += '<div class="progress-seg' + (i <= questionNumber ? " filled" : "") + '"></div>';
+    }
+    return (
+      '<div class="progress-row">' +
+        '<span class="progress-label">질문 ' + questionNumber + ' / ' + TOTAL_QUESTIONS + '</span>' +
+        '<div class="progress-track">' + segs + '</div>' +
+      '</div>'
+    );
+  }
+
+  function renderQuestionCard(questionNumber, question, options) {
+    var optionKeys = ["A", "B", "C", "D"];
+    var optionsHtml = (options || []).map(function (opt, idx) {
+      return (
+        '<button type="button" class="option-btn" data-option="' + idx + '">' +
+          '<span class="option-key">' + optionKeys[idx] + '</span>' +
+          '<span>' + escapeHtml(opt) + '</span>' +
+        '</button>'
+      );
+    }).join("");
+
+    el.quizScreen.innerHTML =
+      '<div class="quiz-card" id="quizCard">' +
+        progressMarkup(questionNumber) +
+        historyMarkup() +
+        '<p class="quiz-question">' + escapeHtml(question) + '</p>' +
+        '<div class="quiz-options">' + optionsHtml + '</div>' +
+        '<button type="button" class="custom-toggle" id="customToggle">' +
+          '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>' +
+          '직접 입력할게요' +
+        '</button>' +
+        '<div class="custom-answer" id="customAnswer">' +
+          '<textarea id="customAnswerInput" placeholder="답변을 자유롭게 입력하세요..."></textarea>' +
+          '<button type="button" class="btn-primary" id="customSubmit">답변 제출</button>' +
+        '</div>' +
+      '</div>';
+
+    var optionButtons = el.quizScreen.querySelectorAll(".option-btn");
+    optionButtons.forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        if (btn.disabled) return;
+        var idx = Number(btn.getAttribute("data-option"));
+        optionButtons.forEach(function (b) { b.disabled = true; });
+        btn.classList.add("selected");
+        setTimeout(function () { submitAnswer((options || [])[idx]); }, 160);
+      });
+    });
+
+    var historyToggle = document.getElementById("historyToggle");
+    if (historyToggle) {
+      historyToggle.addEventListener("click", function () {
+        document.getElementById("historyList").classList.toggle("open");
+      });
+    }
+
+    var customToggle = document.getElementById("customToggle");
+    var customAnswer = document.getElementById("customAnswer");
+    customToggle.addEventListener("click", function () {
+      customAnswer.classList.toggle("open");
+      if (customAnswer.classList.contains("open")) document.getElementById("customAnswerInput").focus();
+    });
+    document.getElementById("customSubmit").addEventListener("click", function () {
+      var input = document.getElementById("customAnswerInput");
+      if (!input.value.trim()) { shakeInvalid(input); return; }
+      submitAnswer(input.value);
+    });
+  }
+
+  function renderLoading(questionNumber) {
+    el.quizScreen.innerHTML =
+      '<div class="quiz-card">' +
+        progressMarkup(questionNumber) +
+        '<div class="quiz-loading">' +
+          '<div class="dot-pulse"><span></span><span></span><span></span></div>' +
+          '<span>다음 질문을 준비하는 중...</span>' +
+        '</div>' +
+      '</div>';
+  }
+
+  function renderError(questionNumber, message) {
+    el.quizScreen.innerHTML =
+      '<div class="quiz-card">' +
+        progressMarkup(questionNumber) +
+        '<div class="quiz-error">' + escapeHtml(message) + '</div>' +
+        '<button type="button" class="btn-primary" id="retryBtn">다시 시도</button>' +
+      '</div>';
+    document.getElementById("retryBtn").addEventListener("click", function () {
+      stepTurn(questionNumber);
+    });
+  }
+
+  function downloadMarkdown() {
+    var content = state.finalMarkdown || "";
+    var blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
+    var url = URL.createObjectURL(blob);
+    var stamp = new Date().toISOString().slice(0, 10);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = "requirement-spec-" + stamp + ".md";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function renderDone(closingMessage) {
+    el.quizScreen.innerHTML =
+      '<div class="done-card">' +
+        '<div class="eyebrow">인터뷰 완료</div>' +
+        '<h2>요구사항 정의가 끝났습니다</h2>' +
+        '<p>' + escapeHtml(closingMessage || "오른쪽 문서를 확인하고 필요하면 다시 시작해 새로운 요청을 분석해보세요.") + '</p>' +
+        '<div class="btn-row">' +
+          '<button type="button" class="btn-solid" id="downloadBtn">요구사항 정의서 다운로드</button>' +
+          '<button type="button" class="btn-outline" id="doneResetBtn">새 요청 시작하기</button>' +
+        '</div>' +
+      '</div>';
+    document.getElementById("downloadBtn").addEventListener("click", downloadMarkdown);
+    document.getElementById("doneResetBtn").addEventListener("click", resetSession);
+  }
+
+  async function callClaude() {
+    var res = await sb.functions.invoke("claude-interview", {
+      body: {
+        model: state.model,
+        max_tokens: 1800,
+        system: SYSTEM_PROMPT,
+        tools: [REQUIREMENT_TOOL],
+        tool_choice: { type: "tool", name: "record_requirement_step" },
+        messages: state.messages
+      }
+    });
+    if (res.error) {
+      var msg = "API 오류";
+      try {
+        if (res.error.context && typeof res.error.context.json === "function") {
+          var parsed = await res.error.context.json();
+          if (parsed && parsed.error && parsed.error.message) msg += ": " + parsed.error.message;
+        } else if (res.error.message) {
+          msg += ": " + res.error.message;
+        }
+      } catch (e) { /* ignore parse failure */ }
+      throw new Error(msg);
+    }
+    return res.data;
+  }
+
+  async function stepTurn(pendingQuestionNumber) {
+    renderLoading(Math.min(pendingQuestionNumber, TOTAL_QUESTIONS));
+    var forcedFinal = pendingQuestionNumber > TOTAL_QUESTIONS;
+
+    try {
+      var data = await callClaude();
+      var toolBlock = null;
+      for (var i = 0; i < data.content.length; i++) {
+        if (data.content[i].type === "tool_use") { toolBlock = data.content[i]; break; }
+      }
+      if (!toolBlock) throw new Error("모델이 예상된 형식으로 응답하지 않았습니다.");
+
+      state.messages.push({ role: "assistant", content: data.content });
+      state.lastToolUseId = toolBlock.id;
+
+      var input = toolBlock.input || {};
+      updateDoc(input.requirementMarkdown || "");
+
+      var isDone = forcedFinal || !!input.done;
+
+      if (isDone) {
+        state.done = true;
+        state.screen = "done";
+        state.finalMarkdown = input.requirementMarkdown || "";
+        state.closingMessage = input.closingMessage || null;
+        state.completeness = 100;
+        setCompleteness(100);
+        renderDone(input.closingMessage);
+      } else {
+        state.screen = "quiz";
+        state.questionsAsked = pendingQuestionNumber;
+        state.completeness = Math.round(((pendingQuestionNumber - 1) / TOTAL_QUESTIONS) * 100);
+        setCompleteness(state.completeness);
+        var options = (input.questionOptions && input.questionOptions.length)
+          ? input.questionOptions
+          : ["예", "아니요"];
+        state.currentQuestion = input.nextQuestion || "조금 더 알려주시겠어요?";
+        state.currentOptions = options;
+        renderQuestionCard(pendingQuestionNumber, state.currentQuestion, options);
+      }
+      persistSession();
+    } catch (err) {
+      renderError(Math.min(pendingQuestionNumber, TOTAL_QUESTIONS), err.message || String(err));
+    }
+  }
+
+  function submitAnswer(text) {
+    if (state.done) return;
+    text = (text || "").trim();
+    if (!text) return;
+
+    state.questionsAnswered += 1;
+    var nextQuestionNumber = state.questionsAnswered + 1;
+    var notice;
+    if (nextQuestionNumber > TOTAL_QUESTIONS) {
+      notice = "\n\n[시스템 안내: 마지막 질문에 대한 답변입니다. 이것으로 " + TOTAL_QUESTIONS + "개 질문이 모두 끝났습니다. 반드시 done=true로 마무리하세요.]";
+    } else {
+      notice = "\n\n[시스템 안내: 이번이 " + nextQuestionNumber + "번째 질문입니다. 총 " + TOTAL_QUESTIONS + "개 중.]";
+    }
+
+    state.messages.push({
+      role: "user",
+      content: [{ type: "tool_result", tool_use_id: state.lastToolUseId, content: text + notice }]
+    });
+
+    stepTurn(nextQuestionNumber);
+  }
+
+  el.startBtn.addEventListener("click", function () {
+    var text = el.initialInput.value.trim();
+    if (!text) { shakeInvalid(el.initialInput); return; }
+
+    state.screen = "quiz";
+    el.introScreen.style.display = "none";
+    el.quizScreen.style.display = "block";
+
+    var notice = "\n\n[시스템 안내: 이 인터뷰는 총 " + TOTAL_QUESTIONS + "개의 질문으로 진행됩니다. 이번이 1번째 질문입니다.]";
+    state.messages.push({ role: "user", content: text + notice });
+    stepTurn(1);
+  });
+
+  el.initialInput.addEventListener("keydown", function (e) {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+      el.startBtn.click();
+    }
+  });
+
+  loadFromSupabase();
+})();

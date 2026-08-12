@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IT Requirement Interviewer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+<div class="app-shell">
+  <header>
+    <div class="brand">
+      <h1>IT Requirement Interviewer</h1>
+      <p>한 줄짜리 요청을 개발 가능한 요구사항으로</p>
+    </div>
+    <div class="header-actions">
+      <span class="model-badge" id="modelBadge">Sonnet 5</span>
+      <button class="icon-btn" id="resetBtn" title="다시 시작">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
+      </button>
+      <button class="icon-btn" id="settingsBtn" title="설정">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+      </button>
+    </div>
+    <div class="settings-panel" id="settingsPanel">
+      <label for="modelSelect">모델</label>
+      <select id="modelSelect">
+        <option value="claude-sonnet-5">Sonnet 5 (권장 · 균형)</option>
+        <option value="claude-haiku-4-5-20251001">Haiku 4.5 (빠름 · 저비용)</option>
+        <option value="claude-opus-5">Opus 5 (심층 분석)</option>
+      </select>
+      <p class="settings-note">모델 설정과 인터뷰 진행 상황은 이 브라우저를 식별하는 익명 ID로 Supabase에 저장됩니다. Claude API 키는 서버(Edge Function)에만 보관되어 브라우저에는 노출되지 않습니다.</p>
+    </div>
+  </header>
+
+  <div class="split">
+    <!-- LEFT: quiz -->
+    <div class="pane pane-left">
+      <div id="landingScreen" class="landing">
+        <p class="eyebrow">AI Requirement Agent</p>
+        <h1 class="landing-title">한 줄의 요청이,<br>개발자가 오해 없이 구현하는<br>요구사항 정의서가 됩니다.</h1>
+        <p class="landing-lead">IT Requirement Interviewer는 막연한 한 줄짜리 요청 속에 숨어 있는 디테일을 6개의 질문으로 끌어내, 화면 우선순위·예외 처리·완료 기준까지 정리된 요구사항 정의서로 만들어주는 AI 인터뷰 에이전트입니다.</p>
+        <div class="steps-row">
+          <div class="step-item"><span class="step-num">1</span>한 줄 요청 입력</div>
+          <span class="step-arrow">→</span>
+          <div class="step-item"><span class="step-num">2</span>6개 질문에 답변</div>
+          <span class="step-arrow">→</span>
+          <div class="step-item"><span class="step-num">3</span>요구사항 정의서 완성</div>
+        </div>
+        <button class="btn-primary" id="landingStartBtn">시작하기</button>
+      </div>
+
+      <div id="introScreen" class="intro" style="display:none;">
+        <h2>어떤 요구사항을 다듬어 볼까요?</h2>
+        <p class="lead">한 줄로 대충 적어주세요. 6개의 질문 카드에 답하는 동안 개발 가능한 요구사항으로 정리됩니다.</p>
+        <textarea id="initialInput" placeholder="예: 잔고 화면에서 금액을 더 쉽게 볼 수 있게 해주세요."></textarea>
+        <div class="example-chips" id="exampleChips"></div>
+        <button class="btn-primary" id="startBtn">요구사항 분석 시작</button>
+      </div>
+
+      <div id="quizScreen" style="display:none;"></div>
+    </div>
+
+    <!-- RIGHT: requirement doc -->
+    <div class="pane pane-right">
+      <div class="stat-block" id="statBlock">
+        <div class="stat-value" id="pctValue">0<span class="unit">%</span></div>
+        <div class="stat-label">Requirement Completeness</div>
+        <div class="meter-track"><div class="meter-fill" id="meterFill"></div></div>
+      </div>
+      <p class="eyebrow">Refined Requirement</p>
+      <div class="doc-scroll" id="docScroll">
+        <div class="empty-doc" id="docContent">질문에 답하면 이 영역에 요구사항 문서가 실시간으로 채워집니다.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

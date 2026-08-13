@@ -152,7 +152,9 @@
     modelBadge: document.getElementById("modelBadge"),
     archiveBtn: document.getElementById("archiveBtn"),
     archiveModal: document.getElementById("archiveModal"),
-    authBlock: document.getElementById("authBlock"),
+    authBtn: document.getElementById("authBtn"),
+    authModal: document.getElementById("authModal"),
+    authDot: document.getElementById("authDot"),
     resetBtn: document.getElementById("resetBtn"),
     landingScreen: document.getElementById("landingScreen"),
     landingStartBtn: document.getElementById("landingStartBtn"),
@@ -279,24 +281,53 @@
     if (state.screen === "landing") showSampleDoc();
   }
 
-  function renderAuthBlock() {
+  function updateAuthBtn() {
+    el.authBtn.title = state.user ? ("계정: " + (state.user.email || "")) : "로그인";
+    el.authDot.hidden = !state.user;
+  }
+
+  function authPanelBody() {
     if (state.user) {
-      el.authBlock.innerHTML =
-        '<div class="auth-row">' +
-          '<span class="auth-email">' + escapeHtml(state.user.email || "") + '</span>' +
-          '<button type="button" class="auth-btn-outline" id="authLogoutBtn">로그아웃</button>' +
-        '</div>' +
-        '<p class="settings-note">로그인된 계정 기준으로 진행 상황이 다른 기기와 동기화됩니다.</p>';
-      document.getElementById("authLogoutBtn").addEventListener("click", function () {
-        sb.auth.signOut();
-      });
-    } else {
-      el.authBlock.innerHTML =
+      return (
+        '<div class="auth-panel-body">' +
+          '<div class="auth-row">' +
+            '<span class="auth-email">' + escapeHtml(state.user.email || "") + '</span>' +
+            '<button type="button" class="auth-btn-outline" id="authLogoutBtn">로그아웃</button>' +
+          '</div>' +
+          '<p class="settings-note">로그인된 계정 기준으로 진행 상황이 다른 기기와 동기화됩니다.</p>' +
+        '</div>'
+      );
+    }
+    return (
+      '<div class="auth-panel-body">' +
         '<form class="auth-form" id="authForm">' +
           '<input type="email" id="authEmailInput" placeholder="이메일 주소" required>' +
           '<button type="submit" class="auth-btn-solid">매직 링크 받기</button>' +
         '</form>' +
-        '<p class="settings-note">로그인하면 진행 중인 인터뷰를 다른 기기에서도 이어갈 수 있습니다.</p>';
+        '<p class="settings-note">로그인하면 진행 중인 인터뷰를 다른 기기에서도 이어갈 수 있습니다.</p>' +
+      '</div>'
+    );
+  }
+
+  function renderAuthPanel() {
+    el.authModal.innerHTML =
+      '<div class="archive-panel">' +
+        '<div class="archive-panel-header">' +
+          '<h3>로그인</h3>' +
+          '<button type="button" class="icon-btn" id="authCloseBtn" title="닫기">' +
+            '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>' +
+          '</button>' +
+        '</div>' +
+        authPanelBody() +
+      '</div>';
+
+    document.getElementById("authCloseBtn").addEventListener("click", closeAuthModal);
+
+    if (state.user) {
+      document.getElementById("authLogoutBtn").addEventListener("click", function () {
+        sb.auth.signOut();
+      });
+    } else {
       document.getElementById("authForm").addEventListener("submit", async function (e) {
         e.preventDefault();
         var email = document.getElementById("authEmailInput").value.trim();
@@ -311,13 +342,27 @@
         if (res.error) {
           submitBtn.disabled = false;
           submitBtn.textContent = "매직 링크 받기";
-          el.authBlock.insertAdjacentHTML("beforeend", '<p class="auth-error">전송 실패: ' + escapeHtml(res.error.message) + '</p>');
+          el.authModal.querySelector(".auth-panel-body").insertAdjacentHTML("beforeend", '<p class="auth-error">전송 실패: ' + escapeHtml(res.error.message) + '</p>');
         } else {
-          el.authBlock.innerHTML = '<p class="settings-note">' + escapeHtml(email) + '로 로그인 링크를 보냈습니다. 메일함을 확인해주세요.</p>';
+          el.authModal.querySelector(".auth-panel-body").innerHTML = '<p class="settings-note">' + escapeHtml(email) + '로 로그인 링크를 보냈습니다. 메일함을 확인해주세요.</p>';
         }
       });
     }
   }
+
+  function openAuthModal() {
+    renderAuthPanel();
+    el.authModal.classList.add("open");
+  }
+
+  function closeAuthModal() {
+    el.authModal.classList.remove("open");
+  }
+
+  el.authBtn.addEventListener("click", openAuthModal);
+  el.authModal.addEventListener("click", function (e) {
+    if (e.target === el.authModal) closeAuthModal();
+  });
 
   async function syncOnSignIn() {
     var row = await loadSessionRow();
@@ -335,7 +380,8 @@
   sb.auth.onAuthStateChange(function (event, session) {
     var prevUserId = state.user ? state.user.id : null;
     state.user = session ? session.user : null;
-    renderAuthBlock();
+    updateAuthBtn();
+    if (el.authModal.classList.contains("open")) renderAuthPanel();
     if (event === "SIGNED_IN" && state.user && state.user.id !== prevUserId) {
       syncOnSignIn();
     } else if (event === "SIGNED_OUT") {
@@ -957,7 +1003,7 @@
   async function init() {
     var sessionRes = await sb.auth.getSession();
     state.user = sessionRes.data && sessionRes.data.session ? sessionRes.data.session.user : null;
-    renderAuthBlock();
+    updateAuthBtn();
     await loadFromSupabase();
   }
   init();

@@ -15,6 +15,31 @@
   }
   var deviceId = getDeviceId();
 
+  var ARCHIVE_KEY = "iri_archive";
+  var ARCHIVE_MAX = 50;
+
+  function loadArchive() {
+    try {
+      var list = JSON.parse(localStorage.getItem(ARCHIVE_KEY) || "[]");
+      return Array.isArray(list) ? list : [];
+    } catch (e) { return []; }
+  }
+
+  function saveArchive(list) {
+    try { localStorage.setItem(ARCHIVE_KEY, JSON.stringify(list)); } catch (e) { /* storage full or blocked */ }
+  }
+
+  function addToArchive(doc) {
+    var list = loadArchive();
+    list.unshift(doc);
+    if (list.length > ARCHIVE_MAX) list = list.slice(0, ARCHIVE_MAX);
+    saveArchive(list);
+  }
+
+  function removeFromArchive(id) {
+    saveArchive(loadArchive().filter(function (d) { return d.id !== id; }));
+  }
+
   var TOTAL_QUESTIONS = 4;
 
   var MODEL_LABELS = {
@@ -101,7 +126,8 @@
     currentQuestion: null,
     currentOptions: [],
     closingMessage: null,
-    originalRequest: ""
+    originalRequest: "",
+    currentDoc: null
   };
 
   var el = {
@@ -109,6 +135,8 @@
     settingsPanel: document.getElementById("settingsPanel"),
     modelSelect: document.getElementById("modelSelect"),
     modelBadge: document.getElementById("modelBadge"),
+    archiveBtn: document.getElementById("archiveBtn"),
+    archiveModal: document.getElementById("archiveModal"),
     resetBtn: document.getElementById("resetBtn"),
     landingScreen: document.getElementById("landingScreen"),
     landingStartBtn: document.getElementById("landingStartBtn"),
@@ -231,6 +259,16 @@
       el.landingScreen.style.display = "none";
       el.introScreen.style.display = "none";
       el.quizScreen.style.display = "block";
+      if (!state.currentDoc) {
+        state.currentDoc = {
+          id: "restored-" + Date.now(),
+          createdAt: new Date().toISOString(),
+          model: state.model,
+          originalRequest: state.originalRequest || "",
+          markdown: state.finalMarkdown || "",
+          closingMessage: state.closingMessage
+        };
+      }
       renderDone(state.closingMessage);
     } else if (state.screen === "quiz") {
       el.landingScreen.style.display = "none";
@@ -559,11 +597,11 @@
     return html;
   }
 
-  function buildExportHtml() {
-    var dateLabel = new Date().toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric" });
-    var modelLabel = MODEL_LABELS[state.model] || state.model;
-    var requestHtml = state.originalRequest
-      ? '<blockquote class="doc-request">' + escapeHtml(state.originalRequest) + '</blockquote>'
+  function buildExportHtml(doc) {
+    var dateLabel = new Date(doc.createdAt || Date.now()).toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric" });
+    var modelLabel = MODEL_LABELS[doc.model] || doc.model;
+    var requestHtml = doc.originalRequest
+      ? '<blockquote class="doc-request">' + escapeHtml(doc.originalRequest) + '</blockquote>'
       : '';
     return (
       '<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8">' +
@@ -578,17 +616,17 @@
           '<div><dt>도구</dt><dd>IT Requirement Interviewer</dd></div>' +
         '</dl>' +
         '<hr>' +
-        renderExportSections(state.finalMarkdown) +
+        renderExportSections(doc.markdown) +
         '<p class="doc-footer">IT Requirement Interviewer로 생성된 문서입니다.</p>' +
       '</main></body></html>'
     );
   }
 
-  function downloadRequirement() {
-    var content = buildExportHtml();
+  function downloadDoc(doc) {
+    var content = buildExportHtml(doc);
     var blob = new Blob([content], { type: "text/html;charset=utf-8" });
     var url = URL.createObjectURL(blob);
-    var stamp = new Date().toISOString().slice(0, 10);
+    var stamp = (doc.createdAt || new Date().toISOString()).slice(0, 10);
     var a = document.createElement("a");
     a.href = url;
     a.download = "requirement-spec-" + stamp + ".html";
@@ -597,6 +635,85 @@
     a.remove();
     URL.revokeObjectURL(url);
   }
+
+  function archiveItemMarkup(doc) {
+    var title = (doc.originalRequest || "제목 없는 요청").trim();
+    if (title.length > 70) title = title.slice(0, 70) + "…";
+    var dateLabel = new Date(doc.createdAt || Date.now()).toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric" });
+    var modelLabel = MODEL_LABELS[doc.model] || doc.model || "";
+    return (
+      '<div class="archive-item" data-id="' + escapeHtml(doc.id) + '">' +
+        '<div class="archive-item-main">' +
+          '<p class="archive-item-title">' + escapeHtml(title) + '</p>' +
+          '<p class="archive-item-meta">' + escapeHtml(dateLabel) + ' · ' + escapeHtml(modelLabel) + '</p>' +
+        '</div>' +
+        '<div class="archive-item-actions">' +
+          '<button type="button" class="archive-download" data-id="' + escapeHtml(doc.id) + '" title="다운로드">' +
+            '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>' +
+          '</button>' +
+          '<button type="button" class="archive-delete" data-id="' + escapeHtml(doc.id) + '" title="삭제">' +
+            '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path></svg>' +
+          '</button>' +
+        '</div>' +
+      '</div>'
+    );
+  }
+
+  function renderArchiveModal() {
+    var list = loadArchive();
+    var bodyHtml = list.length
+      ? '<div class="archive-list">' + list.map(archiveItemMarkup).join("") + '</div>'
+      : '<div class="archive-empty">아직 완성된 요구사항 정의서가 없습니다. 인터뷰를 끝까지 마치면 여기에 자동으로 모입니다.</div>';
+
+    el.archiveModal.innerHTML =
+      '<div class="archive-panel">' +
+        '<div class="archive-panel-header">' +
+          '<h3>요구사항 정의서 보관함</h3>' +
+          '<button type="button" class="icon-btn" id="archiveCloseBtn" title="닫기">' +
+            '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>' +
+          '</button>' +
+        '</div>' +
+        '<p class="archive-panel-note">완료된 인터뷰는 이 브라우저에만 저장됩니다. 다른 기기나 브라우저에서는 보이지 않습니다.</p>' +
+        bodyHtml +
+        (list.length ? '<button type="button" class="archive-clear" id="archiveClearBtn">전체 삭제</button>' : '') +
+      '</div>';
+
+    document.getElementById("archiveCloseBtn").addEventListener("click", closeArchiveModal);
+
+    Array.prototype.forEach.call(el.archiveModal.querySelectorAll(".archive-download"), function (btn) {
+      btn.addEventListener("click", function () {
+        var doc = loadArchive().filter(function (d) { return d.id === btn.getAttribute("data-id"); })[0];
+        if (doc) downloadDoc(doc);
+      });
+    });
+    Array.prototype.forEach.call(el.archiveModal.querySelectorAll(".archive-delete"), function (btn) {
+      btn.addEventListener("click", function () {
+        removeFromArchive(btn.getAttribute("data-id"));
+        renderArchiveModal();
+      });
+    });
+    var clearBtn = document.getElementById("archiveClearBtn");
+    if (clearBtn) {
+      clearBtn.addEventListener("click", function () {
+        saveArchive([]);
+        renderArchiveModal();
+      });
+    }
+  }
+
+  function openArchiveModal() {
+    renderArchiveModal();
+    el.archiveModal.classList.add("open");
+  }
+
+  function closeArchiveModal() {
+    el.archiveModal.classList.remove("open");
+  }
+
+  el.archiveBtn.addEventListener("click", openArchiveModal);
+  el.archiveModal.addEventListener("click", function (e) {
+    if (e.target === el.archiveModal) closeArchiveModal();
+  });
 
   function renderDone(closingMessage) {
     el.quizScreen.innerHTML =
@@ -610,7 +727,7 @@
           '<button type="button" class="btn-outline" id="doneResetBtn">새 요청 시작하기</button>' +
         '</div>' +
       '</div>';
-    document.getElementById("downloadBtn").addEventListener("click", downloadRequirement);
+    document.getElementById("downloadBtn").addEventListener("click", function () { downloadDoc(state.currentDoc); });
     document.getElementById("doneResetBtn").addEventListener("click", resetSession);
   }
 
@@ -667,6 +784,15 @@
         state.closingMessage = input.closingMessage || null;
         state.completeness = 100;
         setCompleteness(100);
+        state.currentDoc = {
+          id: (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : (String(Date.now()) + "-" + Math.random().toString(16).slice(2)),
+          createdAt: new Date().toISOString(),
+          model: state.model,
+          originalRequest: state.originalRequest,
+          markdown: state.finalMarkdown,
+          closingMessage: state.closingMessage
+        };
+        addToArchive(state.currentDoc);
         renderDone(input.closingMessage);
       } else {
         state.screen = "quiz";

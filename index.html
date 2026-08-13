@@ -43,11 +43,36 @@
       <div id="landingScreen" class="landing">
         <p class="eyebrow">AI Requirement Agent</p>
         <h1 class="landing-title">한 줄의 요청이,<br>개발자가 오해 없이 구현하는<br>요구사항 정의서가 됩니다.</h1>
-        <p class="landing-lead">IT Requirement Interviewer는 막연한 한 줄짜리 요청 속에 숨어 있는 디테일을 6개의 질문으로 끌어내, 화면 우선순위·예외 처리·완료 기준까지 정리된 요구사항 정의서로 만들어주는 AI 인터뷰 에이전트입니다.</p>
+        <p class="landing-lead">IT Requirement Interviewer는 막연한 한 줄짜리 요청 속에 숨어 있는 디테일을 4개의 질문으로 끌어내, 화면 우선순위·예외 처리·완료 기준까지 정리된 요구사항 정의서로 만들어주는 AI 인터뷰 에이전트입니다.</p>
+
+        <div class="feature-grid">
+          <div class="feature-item">
+            <div class="feature-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg></div>
+            <div>
+              <p class="feature-title">맥락에 맞는 꼬리질문</p>
+              <p class="feature-desc">요청 도메인에 맞춰 화면·예외·우선순위를 스스로 판단해 캐묻습니다.</p>
+            </div>
+          </div>
+          <div class="feature-item">
+            <div class="feature-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="9" y1="14" x2="15" y2="14"></line><line x1="9" y1="18" x2="13" y2="18"></line></svg></div>
+            <div>
+              <p class="feature-title">실시간 문서화</p>
+              <p class="feature-desc">답변할 때마다 우측 화면에 요구사항 정의서가 바로바로 채워집니다.</p>
+            </div>
+          </div>
+          <div class="feature-item">
+            <div class="feature-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg></div>
+            <div>
+              <p class="feature-title">바로 공유하는 산출물</p>
+              <p class="feature-desc">완성된 문서를 마크다운 파일로 내려받아 개발팀에 바로 전달합니다.</p>
+            </div>
+          </div>
+        </div>
+
         <div class="steps-row">
           <div class="step-item"><span class="step-num">1</span>한 줄 요청 입력</div>
           <span class="step-arrow">→</span>
-          <div class="step-item"><span class="step-num">2</span>6개 질문에 답변</div>
+          <div class="step-item"><span class="step-num">2</span>4개 질문에 답변</div>
           <span class="step-arrow">→</span>
           <div class="step-item"><span class="step-num">3</span>요구사항 정의서 완성</div>
         </div>
@@ -56,7 +81,7 @@
 
       <div id="introScreen" class="intro" style="display:none;">
         <h2>어떤 요구사항을 다듬어 볼까요?</h2>
-        <p class="lead">한 줄로 대충 적어주세요. 6개의 질문 카드에 답하는 동안 개발 가능한 요구사항으로 정리됩니다.</p>
+        <p class="lead">한 줄로 대충 적어주세요. 4개의 질문 카드에 답하는 동안 개발 가능한 요구사항으로 정리됩니다.</p>
         <textarea id="initialInput" placeholder="예: 잔고 화면에서 금액을 더 쉽게 볼 수 있게 해주세요."></textarea>
         <div class="example-chips" id="exampleChips"></div>
         <button class="btn-primary" id="startBtn">요구사항 분석 시작</button>
@@ -72,7 +97,7 @@
         <div class="stat-label">Requirement Completeness</div>
         <div class="meter-track"><div class="meter-fill" id="meterFill"></div></div>
       </div>
-      <p class="eyebrow">Refined Requirement</p>
+      <p class="eyebrow" id="docEyebrow">Refined Requirement</p>
       <div class="doc-scroll" id="docScroll">
         <div class="empty-doc" id="docContent">질문에 답하면 이 영역에 요구사항 문서가 실시간으로 채워집니다.</div>
       </div>

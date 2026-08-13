@@ -15,7 +15,7 @@
   }
   var deviceId = getDeviceId();
 
-  var TOTAL_QUESTIONS = 6;
+  var TOTAL_QUESTIONS = 4;
 
   var MODEL_LABELS = {
     "claude-sonnet-5": "Sonnet 5",
@@ -28,6 +28,24 @@
     "주문 목록에서 원하는 상품을 빠르게 찾을 수 있게 해주세요.",
     "알림이 너무 많이 와서 중요한 것만 보고 싶어요."
   ];
+
+  var SAMPLE_MARKDOWN = [
+    "## 목적",
+    "- 잔고 화면에서 사용자가 금액을 더 쉽고 빠르게 확인할 수 있도록 개선한다.",
+    "## 화면/정보 우선순위",
+    "- 현재 잔고를 화면 상단에 가장 크고 굵은 글씨로 노출한다.",
+    "- 전월 대비 증감액과 증감률을 잔고 바로 아래 보조 정보로 배치한다.",
+    "- 계좌별 상세 내역은 접었다 펼 수 있는 아코디언으로 하단에 배치한다.",
+    "## 표시 규칙",
+    "- 잔고가 0원이면 \"거래 내역이 없습니다\" 안내 문구를 표시한다.",
+    "- 잔고가 1억 원 이상이면 \"억\" 단위로 축약해 표기한다.",
+    "- 마이너스 잔고는 빨간색으로 강조 표시한다.",
+    "## 예외 처리",
+    "- 잔고 조회 API가 3초 내 응답하지 않으면 스켈레톤 로딩 UI를 노출한다.",
+    "- 네트워크 오류 시 \"다시 시도\" 버튼과 함께 에러 메시지를 표시한다.",
+    "## 완료 기준",
+    "- 잔고 확인까지 걸리는 평균 탭 수가 기존 대비 50% 감소한다."
+  ].join("\n");
 
   var SYSTEM_PROMPT = [
     "당신은 \"IT Requirement Interviewer\"라는 이름의 요구사항 분석 Agent입니다.",
@@ -82,7 +100,8 @@
     screen: "landing",   // landing | intro | quiz | done
     currentQuestion: null,
     currentOptions: [],
-    closingMessage: null
+    closingMessage: null,
+    originalRequest: ""
   };
 
   var el = {
@@ -101,6 +120,8 @@
     statBlock: document.getElementById("statBlock"),
     pctValue: document.getElementById("pctValue"),
     meterFill: document.getElementById("meterFill"),
+    docEyebrow: document.getElementById("docEyebrow"),
+    docScroll: document.getElementById("docScroll"),
     docContent: document.getElementById("docContent")
   };
 
@@ -196,6 +217,8 @@
         rehydrateScreen();
       }
     } catch (e) { /* start fresh if the session can't be loaded */ }
+
+    if (state.screen === "landing") showSampleDoc();
   }
 
   function rehydrateScreen() {
@@ -222,6 +245,7 @@
   });
 
   el.landingStartBtn.addEventListener("click", function () {
+    clearSampleDoc();
     state.screen = "intro";
     el.landingScreen.style.display = "none";
     el.introScreen.style.display = "flex";
@@ -230,6 +254,9 @@
   });
 
   function resetSession() {
+    el.docEyebrow.textContent = "Refined Requirement";
+    var sampleNote = document.getElementById("sampleNote");
+    if (sampleNote) sampleNote.remove();
     state.messages = [];
     state.lastToolUseId = null;
     state.done = false;
@@ -241,6 +268,7 @@
     state.currentQuestion = null;
     state.currentOptions = [];
     state.closingMessage = null;
+    state.originalRequest = "";
     el.initialInput.value = "";
     el.quizScreen.innerHTML = "";
     el.quizScreen.style.display = "none";
@@ -330,6 +358,33 @@
     }
     el.docContent.replaceWith(wrap);
     el.docContent = wrap;
+  }
+
+  function showSampleDoc() {
+    el.docEyebrow.innerHTML = 'Refined Requirement<span class="sample-badge">예시</span>';
+    var wrap = document.createElement("div");
+    wrap.id = "docContent";
+    wrap.innerHTML = renderDoc(SAMPLE_MARKDOWN);
+    Array.prototype.forEach.call(wrap.querySelectorAll(".doc-card"), function (card) {
+      card.classList.add("sample");
+    });
+    el.docContent.replaceWith(wrap);
+    el.docContent = wrap;
+
+    if (!document.getElementById("sampleNote")) {
+      var banner = document.createElement("div");
+      banner.className = "sample-note";
+      banner.id = "sampleNote";
+      banner.textContent = "예시: \"잔고 화면에서 금액을 더 쉽게 볼 수 있게 해주세요\"라는 한 줄 요청이 4개의 질문을 거치면 이렇게 완성됩니다.";
+      el.docScroll.insertBefore(banner, el.docContent);
+    }
+  }
+
+  function clearSampleDoc() {
+    el.docEyebrow.textContent = "Refined Requirement";
+    var banner = document.getElementById("sampleNote");
+    if (banner) banner.remove();
+    updateDoc(state.finalMarkdown || "");
   }
 
   function buildHistory() {
@@ -460,8 +515,42 @@
     });
   }
 
+  function formatRequirementBody(raw) {
+    var lines = (raw || "").replace(/\r\n/g, "\n").split("\n").map(function (l) {
+      return l.replace(/\s+$/, "");
+    });
+    var out = [];
+    lines.forEach(function (line) {
+      var isHeading = /^#{1,3}\s+/.test(line.trim());
+      if (isHeading && out.length && out[out.length - 1].trim() !== "") {
+        out.push("");
+      }
+      out.push(line);
+    });
+    return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  }
+
+  function buildExportMarkdown() {
+    var dateLabel = new Date().toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric" });
+    var modelLabel = MODEL_LABELS[state.model] || state.model;
+    var lines = ["# 요구사항 정의서", ""];
+    if (state.originalRequest) {
+      lines.push("> " + state.originalRequest.replace(/\n/g, " "));
+      lines.push("");
+    }
+    lines.push("| 항목 | 내용 |");
+    lines.push("| --- | --- |");
+    lines.push("| 생성일 | " + dateLabel + " |");
+    lines.push("| 분석 모델 | " + modelLabel + " |");
+    lines.push("| 도구 | IT Requirement Interviewer |");
+    lines.push("", "---", "");
+    lines.push(formatRequirementBody(state.finalMarkdown));
+    lines.push("");
+    return lines.join("\n");
+  }
+
   function downloadMarkdown() {
-    var content = state.finalMarkdown || "";
+    var content = buildExportMarkdown();
     var blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
     var url = URL.createObjectURL(blob);
     var stamp = new Date().toISOString().slice(0, 10);
@@ -477,6 +566,7 @@
   function renderDone(closingMessage) {
     el.quizScreen.innerHTML =
       '<div class="done-card">' +
+        '<div class="done-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></div>' +
         '<div class="eyebrow">인터뷰 완료</div>' +
         '<h2>요구사항 정의가 끝났습니다</h2>' +
         '<p>' + escapeHtml(closingMessage || "오른쪽 문서를 확인하고 필요하면 다시 시작해 새로운 요청을 분석해보세요.") + '</p>' +
@@ -587,6 +677,7 @@
     var text = el.initialInput.value.trim();
     if (!text) { shakeInvalid(el.initialInput); return; }
 
+    state.originalRequest = text;
     state.screen = "quiz";
     el.introScreen.style.display = "none";
     el.quizScreen.style.display = "block";

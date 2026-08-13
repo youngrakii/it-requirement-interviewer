@@ -289,7 +289,10 @@
   }
 
   function updateAuthBtn() {
-    el.authBtn.title = state.user ? ("계정: " + (state.user.email || "")) : "로그인";
+    var label = state.user ? ("계정: " + (state.user.email || "")) : "로그인";
+    var tooltip = state.user ? "로그인된 계정으로 기기 간 동기화 중이에요" : "로그인하면 다른 기기에서도 이어서 쓸 수 있어요";
+    el.authBtn.setAttribute("aria-label", label);
+    el.authBtn.setAttribute("data-tooltip", tooltip);
     el.authDot.hidden = !state.user;
   }
 

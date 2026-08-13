@@ -132,6 +132,7 @@ header {
   box-shadow: 0 0 6px rgba(250,255,105,0.7);
 }
 .icon-btn {
+  position: relative;
   display: inline-flex; align-items: center; justify-content: center;
   width: 38px; height: 38px; border-radius: 9999px;
   border: 1px solid var(--hairline); background: var(--surface-card);
@@ -146,6 +147,28 @@ header {
 .icon-btn svg { transition: transform 0.3s ease; }
 #resetBtn:hover svg { transform: rotate(-70deg); }
 #settingsBtn:hover svg { transform: rotate(35deg); }
+
+[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute; bottom: calc(100% + 12px); left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  background: #ffffff; color: #14151a; font-size: 12px; font-weight: 600; line-height: 1.4;
+  width: max-content; max-width: 190px; text-align: center;
+  padding: 7px 12px; border-radius: var(--radius-md); box-shadow: var(--shadow-card-strong);
+  opacity: 0; visibility: hidden; pointer-events: none; z-index: 60;
+  transition: opacity 0.14s ease, transform 0.14s ease;
+}
+[data-tooltip]::before {
+  content: ""; position: absolute; bottom: calc(100% + 6px); left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  border: 6px solid transparent; border-top-color: #ffffff;
+  opacity: 0; visibility: hidden; pointer-events: none; z-index: 60;
+  transition: opacity 0.14s ease, transform 0.14s ease;
+}
+[data-tooltip]:hover::after, [data-tooltip]:hover::before,
+[data-tooltip]:focus-visible::after, [data-tooltip]:focus-visible::before {
+  opacity: 1; visibility: visible; transform: translateX(-50%) translateY(0);
+}
 
 .settings-panel {
   position: absolute; top: calc(100% + var(--space-xs)); right: var(--space-xl); z-index: 20;

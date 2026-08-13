@@ -137,8 +137,13 @@
     currentOptions: [],
     closingMessage: null,
     originalRequest: "",
-    currentDoc: null
+    currentDoc: null,
+    user: null
   };
+
+  function getIdentityId() {
+    return state.user ? state.user.id : deviceId;
+  }
 
   var el = {
     settingsBtn: document.getElementById("settingsBtn"),
@@ -147,6 +152,7 @@
     modelBadge: document.getElementById("modelBadge"),
     archiveBtn: document.getElementById("archiveBtn"),
     archiveModal: document.getElementById("archiveModal"),
+    authBlock: document.getElementById("authBlock"),
     resetBtn: document.getElementById("resetBtn"),
     landingScreen: document.getElementById("landingScreen"),
     landingStartBtn: document.getElementById("landingStartBtn"),
@@ -198,19 +204,23 @@
       el.settingsPanel.classList.remove("open");
     }
   });
-  el.modelSelect.addEventListener("change", function () {
-    state.model = el.modelSelect.value;
-    updateModelBadge();
+  function saveModelSetting() {
     sb.from("device_settings")
-      .upsert({ device_id: deviceId, model: state.model, updated_at: new Date().toISOString() })
+      .upsert({ device_id: getIdentityId(), model: state.model, updated_at: new Date().toISOString() })
       .then(function (res) {
         if (res.error) console.error("Supabase settings save failed:", res.error);
       });
+  }
+
+  el.modelSelect.addEventListener("change", function () {
+    state.model = el.modelSelect.value;
+    updateModelBadge();
+    saveModelSetting();
   });
 
   function persistSession() {
     var row = {
-      device_id: deviceId,
+      device_id: getIdentityId(),
       screen: state.screen,
       messages: state.messages,
       last_tool_use_id: state.lastToolUseId,
@@ -229,35 +239,109 @@
     });
   }
 
-  async function loadFromSupabase() {
+  async function loadModelSetting() {
     try {
-      var settingsRes = await sb.from("device_settings").select("model").eq("device_id", deviceId).maybeSingle();
-      if (settingsRes.data && settingsRes.data.model) state.model = settingsRes.data.model;
+      var res = await sb.from("device_settings").select("model").eq("device_id", getIdentityId()).maybeSingle();
+      if (res.data && res.data.model) state.model = res.data.model;
     } catch (e) { /* fall back to default model */ }
     el.modelSelect.value = state.model;
     updateModelBadge();
+  }
 
+  async function loadSessionRow() {
     try {
-      var sessionRes = await sb.from("interview_sessions").select("*").eq("device_id", deviceId).maybeSingle();
-      var row = sessionRes.data;
-      if (row) {
-        state.messages = row.messages || [];
-        state.lastToolUseId = row.last_tool_use_id;
-        state.done = row.done;
-        state.questionsAsked = row.questions_asked;
-        state.questionsAnswered = row.questions_answered;
-        state.completeness = row.completeness;
-        state.finalMarkdown = row.final_markdown || "";
-        state.currentQuestion = row.current_question;
-        state.currentOptions = row.current_options || [];
-        state.closingMessage = row.closing_message;
-        state.screen = row.screen || "landing";
-        rehydrateScreen();
-      }
-    } catch (e) { /* start fresh if the session can't be loaded */ }
+      var res = await sb.from("interview_sessions").select("*").eq("device_id", getIdentityId()).maybeSingle();
+      return res.data || null;
+    } catch (e) { return null; }
+  }
 
+  function applySessionRow(row) {
+    state.messages = row.messages || [];
+    state.lastToolUseId = row.last_tool_use_id;
+    state.done = row.done;
+    state.questionsAsked = row.questions_asked;
+    state.questionsAnswered = row.questions_answered;
+    state.completeness = row.completeness;
+    state.finalMarkdown = row.final_markdown || "";
+    state.currentQuestion = row.current_question;
+    state.currentOptions = row.current_options || [];
+    state.closingMessage = row.closing_message;
+    state.screen = row.screen || "landing";
+  }
+
+  async function loadFromSupabase() {
+    await loadModelSetting();
+    var row = await loadSessionRow();
+    if (row) {
+      applySessionRow(row);
+      rehydrateScreen();
+    }
     if (state.screen === "landing") showSampleDoc();
   }
+
+  function renderAuthBlock() {
+    if (state.user) {
+      el.authBlock.innerHTML =
+        '<div class="auth-row">' +
+          '<span class="auth-email">' + escapeHtml(state.user.email || "") + '</span>' +
+          '<button type="button" class="auth-btn-outline" id="authLogoutBtn">로그아웃</button>' +
+        '</div>' +
+        '<p class="settings-note">로그인된 계정 기준으로 진행 상황이 다른 기기와 동기화됩니다.</p>';
+      document.getElementById("authLogoutBtn").addEventListener("click", function () {
+        sb.auth.signOut();
+      });
+    } else {
+      el.authBlock.innerHTML =
+        '<form class="auth-form" id="authForm">' +
+          '<input type="email" id="authEmailInput" placeholder="이메일 주소" required>' +
+          '<button type="submit" class="auth-btn-solid">매직 링크 받기</button>' +
+        '</form>' +
+        '<p class="settings-note">로그인하면 진행 중인 인터뷰를 다른 기기에서도 이어갈 수 있습니다.</p>';
+      document.getElementById("authForm").addEventListener("submit", async function (e) {
+        e.preventDefault();
+        var email = document.getElementById("authEmailInput").value.trim();
+        if (!email) return;
+        var submitBtn = e.target.querySelector("button[type=submit]");
+        submitBtn.disabled = true;
+        submitBtn.textContent = "전송 중…";
+        var res = await sb.auth.signInWithOtp({
+          email: email,
+          options: { emailRedirectTo: window.location.origin + window.location.pathname }
+        });
+        if (res.error) {
+          submitBtn.disabled = false;
+          submitBtn.textContent = "매직 링크 받기";
+          el.authBlock.insertAdjacentHTML("beforeend", '<p class="auth-error">전송 실패: ' + escapeHtml(res.error.message) + '</p>');
+        } else {
+          el.authBlock.innerHTML = '<p class="settings-note">' + escapeHtml(email) + '로 로그인 링크를 보냈습니다. 메일함을 확인해주세요.</p>';
+        }
+      });
+    }
+  }
+
+  async function syncOnSignIn() {
+    var row = await loadSessionRow();
+    await loadModelSetting();
+    if (row) {
+      applySessionRow(row);
+      rehydrateScreen();
+      if (state.screen === "landing") showSampleDoc();
+    } else {
+      persistSession();
+      saveModelSetting();
+    }
+  }
+
+  sb.auth.onAuthStateChange(function (event, session) {
+    var prevUserId = state.user ? state.user.id : null;
+    state.user = session ? session.user : null;
+    renderAuthBlock();
+    if (event === "SIGNED_IN" && state.user && state.user.id !== prevUserId) {
+      syncOnSignIn();
+    } else if (event === "SIGNED_OUT") {
+      loadFromSupabase();
+    }
+  });
 
   function rehydrateScreen() {
     setCompleteness(state.completeness);
@@ -870,5 +954,11 @@
     }
   });
 
-  loadFromSupabase();
+  async function init() {
+    var sessionRes = await sb.auth.getSession();
+    state.user = sessionRes.data && sessionRes.data.session ? sessionRes.data.session.user : null;
+    renderAuthBlock();
+    await loadFromSupabase();
+  }
+  init();
 })();

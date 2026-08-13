@@ -15,29 +15,39 @@
   }
   var deviceId = getDeviceId();
 
-  var ARCHIVE_KEY = "iri_archive";
-  var ARCHIVE_MAX = 50;
-
-  function loadArchive() {
-    try {
-      var list = JSON.parse(localStorage.getItem(ARCHIVE_KEY) || "[]");
-      return Array.isArray(list) ? list : [];
-    } catch (e) { return []; }
-  }
-
-  function saveArchive(list) {
-    try { localStorage.setItem(ARCHIVE_KEY, JSON.stringify(list)); } catch (e) { /* storage full or blocked */ }
+  async function fetchArchive() {
+    var res = await sb.from("requirement_docs").select("*").order("created_at", { ascending: false });
+    if (res.error) { console.error("Supabase archive load failed:", res.error); return []; }
+    return (res.data || []).map(function (row) {
+      return {
+        id: row.id,
+        createdAt: row.created_at,
+        model: row.model,
+        originalRequest: row.original_request,
+        markdown: row.markdown,
+        closingMessage: row.closing_message
+      };
+    });
   }
 
   function addToArchive(doc) {
-    var list = loadArchive();
-    list.unshift(doc);
-    if (list.length > ARCHIVE_MAX) list = list.slice(0, ARCHIVE_MAX);
-    saveArchive(list);
+    sb.from("requirement_docs").insert({
+      id: doc.id,
+      device_id: deviceId,
+      model: doc.model,
+      original_request: doc.originalRequest,
+      markdown: doc.markdown,
+      closing_message: doc.closingMessage,
+      created_at: doc.createdAt
+    }).then(function (res) {
+      if (res.error) console.error("Supabase archive save failed:", res.error);
+    });
   }
 
   function removeFromArchive(id) {
-    saveArchive(loadArchive().filter(function (d) { return d.id !== id; }));
+    return sb.from("requirement_docs").delete().eq("id", id).then(function (res) {
+      if (res.error) console.error("Supabase archive delete failed:", res.error);
+    });
   }
 
   var TOTAL_QUESTIONS = 4;
@@ -651,59 +661,65 @@
           '<button type="button" class="archive-download" data-id="' + escapeHtml(doc.id) + '" title="다운로드">' +
             '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>' +
           '</button>' +
-          '<button type="button" class="archive-delete" data-id="' + escapeHtml(doc.id) + '" title="삭제">' +
-            '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"></path><path d="M10 11v6"></path><path d="M14 11v6"></path></svg>' +
+          '<button type="button" class="archive-done" data-id="' + escapeHtml(doc.id) + '" title="개발 완료">' +
+            '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>' +
+            '<span>개발 완료</span>' +
           '</button>' +
         '</div>' +
       '</div>'
     );
   }
 
-  function renderArchiveModal() {
-    var list = loadArchive();
-    var bodyHtml = list.length
-      ? '<div class="archive-list">' + list.map(archiveItemMarkup).join("") + '</div>'
-      : '<div class="archive-empty">아직 완성된 요구사항 정의서가 없습니다. 인터뷰를 끝까지 마치면 여기에 자동으로 모입니다.</div>';
+  var archiveCache = [];
+
+  function renderArchivePanel(list, loading) {
+    var bodyHtml = loading
+      ? '<div class="archive-empty">불러오는 중…</div>'
+      : (list.length
+        ? '<div class="archive-list">' + list.map(archiveItemMarkup).join("") + '</div>'
+        : '<div class="archive-empty">아직 완성된 요구사항 정의서가 없습니다. 인터뷰를 끝까지 마치면 여기에 자동으로 모입니다.</div>');
 
     el.archiveModal.innerHTML =
       '<div class="archive-panel">' +
         '<div class="archive-panel-header">' +
-          '<h3>요구사항 정의서 보관함</h3>' +
+          '<h3>요구사항 정의서 게시판</h3>' +
           '<button type="button" class="icon-btn" id="archiveCloseBtn" title="닫기">' +
             '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>' +
           '</button>' +
         '</div>' +
-        '<p class="archive-panel-note">완료된 인터뷰는 이 브라우저에만 저장됩니다. 다른 기기나 브라우저에서는 보이지 않습니다.</p>' +
+        '<p class="archive-panel-note">완료된 요구사항 정의서 목록입니다. 개발이 끝나면 \'개발 완료\'를 눌러 목록에서 제거하세요.</p>' +
         bodyHtml +
-        (list.length ? '<button type="button" class="archive-clear" id="archiveClearBtn">전체 삭제</button>' : '') +
       '</div>';
 
     document.getElementById("archiveCloseBtn").addEventListener("click", closeArchiveModal);
 
     Array.prototype.forEach.call(el.archiveModal.querySelectorAll(".archive-download"), function (btn) {
       btn.addEventListener("click", function () {
-        var doc = loadArchive().filter(function (d) { return d.id === btn.getAttribute("data-id"); })[0];
+        var doc = archiveCache.filter(function (d) { return d.id === btn.getAttribute("data-id"); })[0];
         if (doc) downloadDoc(doc);
       });
     });
-    Array.prototype.forEach.call(el.archiveModal.querySelectorAll(".archive-delete"), function (btn) {
+    Array.prototype.forEach.call(el.archiveModal.querySelectorAll(".archive-done"), function (btn) {
       btn.addEventListener("click", function () {
-        removeFromArchive(btn.getAttribute("data-id"));
-        renderArchiveModal();
+        var id = btn.getAttribute("data-id");
+        btn.disabled = true;
+        removeFromArchive(id).then(function () {
+          archiveCache = archiveCache.filter(function (d) { return d.id !== id; });
+          renderArchivePanel(archiveCache, false);
+        });
       });
     });
-    var clearBtn = document.getElementById("archiveClearBtn");
-    if (clearBtn) {
-      clearBtn.addEventListener("click", function () {
-        saveArchive([]);
-        renderArchiveModal();
-      });
-    }
+  }
+
+  async function renderArchiveModal() {
+    renderArchivePanel([], true);
+    archiveCache = await fetchArchive();
+    renderArchivePanel(archiveCache, false);
   }
 
   function openArchiveModal() {
-    renderArchiveModal();
     el.archiveModal.classList.add("open");
+    renderArchiveModal();
   }
 
   function closeArchiveModal() {

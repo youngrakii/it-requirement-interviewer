@@ -486,23 +486,20 @@ header {
 .archive-item-meta { font-size: 11.5px; color: var(--muted); margin: 0; }
 .archive-item-actions { display: flex; gap: 6px; flex-shrink: 0; }
 .archive-item-actions button {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 30px; height: 30px; border-radius: var(--radius-sm); border: 1px solid var(--hairline-strong);
-  background: var(--surface-card); color: var(--muted); cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  height: 30px; padding: 0 10px; border-radius: var(--radius-sm); border: 1px solid var(--hairline-strong);
+  background: var(--surface-card); color: var(--muted); cursor: pointer; font-size: 12px; font-weight: 600;
   transition: border-color 0.18s ease, color 0.18s ease, background 0.18s ease;
 }
+.archive-download { width: 30px; padding: 0; }
 .archive-download:hover { border-color: var(--primary); color: var(--ink); }
-.archive-delete:hover { border-color: var(--danger); color: #ff9b9b; }
+.archive-done:hover { border-color: var(--success, #34d399); color: #34d399; }
+.archive-done:disabled { opacity: 0.5; cursor: default; }
 
 .archive-empty {
   text-align: center; color: var(--muted); font-size: 13.5px; line-height: 1.6;
   padding: var(--space-xl) var(--space-md); border: 1px dashed var(--hairline-strong); border-radius: var(--radius-md);
 }
-.archive-clear {
-  align-self: flex-start; background: none; border: none; color: var(--muted); font-size: 12.5px; font-weight: 600;
-  cursor: pointer; padding: 4px 0; transition: color 0.18s ease;
-}
-.archive-clear:hover { color: #ff9b9b; }
 
 ::-webkit-scrollbar { width: 9px; height: 9px; }
 ::-webkit-scrollbar-track { background: transparent; }

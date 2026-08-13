@@ -148,27 +148,26 @@ header {
 #resetBtn:hover svg { transform: rotate(-70deg); }
 #settingsBtn:hover svg { transform: rotate(35deg); }
 
-[data-tooltip]::after {
-  content: attr(data-tooltip);
-  position: absolute; bottom: calc(100% + 12px); left: 50%;
-  transform: translateX(-50%) translateY(4px);
-  background: #ffffff; color: #14151a; font-size: 12px; font-weight: 600; line-height: 1.4;
-  width: max-content; max-width: 190px; text-align: center;
-  padding: 7px 12px; border-radius: var(--radius-md); box-shadow: var(--shadow-card-strong);
-  opacity: 0; visibility: hidden; pointer-events: none; z-index: 60;
-  transition: opacity 0.14s ease, transform 0.14s ease;
+.tips-panel {
+  position: absolute; top: calc(100% + var(--space-xs)); right: var(--space-xl); z-index: 25;
+  display: flex; flex-direction: column; gap: 8px;
+  width: 260px; max-width: calc(100vw - 32px);
 }
-[data-tooltip]::before {
-  content: ""; position: absolute; bottom: calc(100% + 6px); left: 50%;
-  transform: translateX(-50%) translateY(4px);
-  border: 6px solid transparent; border-top-color: #ffffff;
-  opacity: 0; visibility: hidden; pointer-events: none; z-index: 60;
-  transition: opacity 0.14s ease, transform 0.14s ease;
+.tip-row {
+  position: relative; display: flex; align-items: flex-start;
+  background: #ffffff; color: #14151a; font-size: 12px; font-weight: 600; line-height: 1.5; text-align: left;
+  padding: 10px 26px 10px 13px; border-radius: var(--radius-md); box-shadow: var(--shadow-card-strong);
+  animation: rise 0.3s var(--ease);
 }
-[data-tooltip]:hover::after, [data-tooltip]:hover::before,
-[data-tooltip]:focus-visible::after, [data-tooltip]:focus-visible::before {
-  opacity: 1; visibility: visible; transform: translateX(-50%) translateY(0);
+.tip-row.dismissed { display: none; }
+.tooltip-close {
+  position: absolute; top: 6px; right: 6px;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; border-radius: 50%; border: none; background: none;
+  color: #6c6c76; cursor: pointer; padding: 0;
+  transition: color 0.15s ease, background 0.15s ease;
 }
+.tooltip-close:hover { color: #14151a; background: rgba(10,10,10,0.08); }
 
 .settings-panel {
   position: absolute; top: calc(100% + var(--space-xs)); right: var(--space-xl); z-index: 20;

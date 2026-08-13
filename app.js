@@ -182,6 +182,12 @@
     setTimeout(function () { el.coverScreen.style.display = "none"; }, 450);
   });
 
+  Array.prototype.forEach.call(document.querySelectorAll(".tooltip-close"), function (btn) {
+    btn.addEventListener("click", function () {
+      btn.closest(".tip-row").classList.add("dismissed");
+    });
+  });
+
   function shakeInvalid(target) {
     target.classList.remove("shake");
     void target.offsetWidth; // restart animation
@@ -292,7 +298,7 @@
     var label = state.user ? ("계정: " + (state.user.email || "")) : "로그인";
     var tooltip = state.user ? "로그인된 계정으로 기기 간 동기화 중이에요" : "로그인하면 다른 기기에서도 이어서 쓸 수 있어요";
     el.authBtn.setAttribute("aria-label", label);
-    el.authBtn.setAttribute("data-tooltip", tooltip);
+    document.getElementById("authTipText").textContent = tooltip;
     el.authDot.hidden = !state.user;
   }
 

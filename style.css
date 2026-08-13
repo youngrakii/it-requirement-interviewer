@@ -76,7 +76,25 @@ body {
   filter: drop-shadow(0 0 20px rgba(250, 255, 105, 0.25));
   animation: shimmer 7s linear infinite;
 }
-.cover-screen .btn-primary { margin-top: var(--space-sm); }
+.cover-screen .btn-primary {
+  width: auto; height: auto; margin-top: var(--space-sm);
+  padding: 12px 30px; border-radius: var(--radius-pill); font-size: 14px;
+  background: linear-gradient(135deg, #fdff9c 0%, var(--primary) 45%, var(--primary-active) 100%);
+  background-size: 200% auto; background-position: 0% 50%;
+  animation: coverBtnGlow 2.4s ease-in-out infinite, coverBtnGradient 4s ease infinite;
+}
+.cover-screen .btn-primary:hover:not(:disabled) {
+  background-position: 100% 50%; transform: translateY(-2px) scale(1.04); box-shadow: var(--shadow-glow-primary);
+}
+@keyframes coverBtnGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(250,255,105,0.4); }
+  50% { box-shadow: 0 0 0 9px rgba(250,255,105,0); }
+}
+@keyframes coverBtnGradient {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
 
 /* ---------- header ---------- */
 header {

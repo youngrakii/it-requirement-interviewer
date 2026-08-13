@@ -182,11 +182,32 @@
     setTimeout(function () { el.coverScreen.style.display = "none"; }, 450);
   });
 
-  Array.prototype.forEach.call(document.querySelectorAll(".tooltip-close"), function (btn) {
-    btn.addEventListener("click", function () {
-      btn.closest(".tip-row").classList.add("dismissed");
+  var tipSteps = [
+    { tip: "archiveTip", btn: "archiveBtn" },
+    { tip: "authTip", btn: "authBtn" },
+    { tip: "resetTip", btn: "resetBtn" },
+    { tip: "settingsTip", btn: "settingsBtn" }
+  ];
+  var tipIndex = 0;
+
+  function showTip(index) {
+    tipSteps.forEach(function (step) {
+      document.getElementById(step.tip).classList.remove("active");
+      document.getElementById(step.btn).classList.remove("spotlight");
+    });
+    if (index >= tipSteps.length) return;
+    document.getElementById(tipSteps[index].tip).classList.add("active");
+    document.getElementById(tipSteps[index].btn).classList.add("spotlight");
+  }
+
+  tipSteps.forEach(function (step) {
+    document.getElementById(step.tip).querySelector(".tooltip-close").addEventListener("click", function () {
+      tipIndex += 1;
+      showTip(tipIndex);
     });
   });
+
+  showTip(tipIndex);
 
   function shakeInvalid(target) {
     target.classList.remove("shake");

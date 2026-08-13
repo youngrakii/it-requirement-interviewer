@@ -155,6 +155,8 @@
     authBtn: document.getElementById("authBtn"),
     authModal: document.getElementById("authModal"),
     authDot: document.getElementById("authDot"),
+    coverScreen: document.getElementById("coverScreen"),
+    coverStartBtn: document.getElementById("coverStartBtn"),
     resetBtn: document.getElementById("resetBtn"),
     landingScreen: document.getElementById("landingScreen"),
     landingStartBtn: document.getElementById("landingStartBtn"),
@@ -174,6 +176,11 @@
   function updateModelBadge() {
     el.modelBadge.textContent = MODEL_LABELS[state.model] || state.model;
   }
+
+  el.coverStartBtn.addEventListener("click", function () {
+    el.coverScreen.classList.add("cover-exit");
+    setTimeout(function () { el.coverScreen.style.display = "none"; }, 450);
+  });
 
   function shakeInvalid(target) {
     target.classList.remove("shake");

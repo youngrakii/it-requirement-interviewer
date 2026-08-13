@@ -515,48 +515,83 @@
     });
   }
 
-  function formatRequirementBody(raw) {
-    var lines = (raw || "").replace(/\r\n/g, "\n").split("\n").map(function (l) {
-      return l.replace(/\s+$/, "");
-    });
-    var out = [];
-    lines.forEach(function (line) {
-      var isHeading = /^#{1,3}\s+/.test(line.trim());
-      if (isHeading && out.length && out[out.length - 1].trim() !== "") {
-        out.push("");
+  var EXPORT_DOC_CSS = [
+    ":root{color-scheme:light;}",
+    "*{box-sizing:border-box;}",
+    "body{margin:0;background:#f4f4f2;color:#1c1c1e;font-family:'Segoe UI',-apple-system,BlinkMacSystemFont,Arial,sans-serif;line-height:1.7;}",
+    ".doc-page{max-width:720px;margin:0 auto;padding:56px 44px 64px;background:#ffffff;}",
+    ".doc-eyebrow{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1.6px;color:#8a8a92;margin:0 0 10px;}",
+    "h1{font-size:29px;font-weight:800;letter-spacing:-0.5px;margin:0 0 20px;color:#111113;}",
+    ".doc-request{margin:0 0 24px;padding:14px 18px;border-left:3px solid #d8c400;background:#fdfae0;color:#4a4a30;font-size:14.5px;border-radius:4px;}",
+    ".doc-meta{display:flex;flex-wrap:wrap;gap:18px 32px;margin:0 0 28px;padding:0;}",
+    ".doc-meta div{display:flex;flex-direction:column;gap:2px;}",
+    ".doc-meta dt{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#9a9aa1;margin:0;}",
+    ".doc-meta dd{font-size:14px;font-weight:600;color:#28282c;margin:0;}",
+    "hr{border:none;border-top:1px solid #e4e4e8;margin:0 0 32px;}",
+    ".doc-section{margin:0 0 32px;padding-left:16px;border-left:3px solid #dfe000;}",
+    ".doc-section-badge{display:inline-block;font-family:Consolas,'Cascadia Code',monospace;font-size:10.5px;letter-spacing:1px;color:#75701f;background:#fbfbd2;border:1px solid #eceb9a;border-radius:4px;padding:3px 8px;margin-bottom:10px;}",
+    ".doc-section h2{font-size:18px;font-weight:700;margin:0 0 12px;color:#141416;letter-spacing:-0.2px;}",
+    ".doc-section ul{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:9px;}",
+    ".doc-section li{position:relative;padding-left:18px;font-size:15px;color:#33333a;}",
+    ".doc-section li::before{content:'';position:absolute;left:2px;top:9px;width:5px;height:5px;border-radius:50%;background:#c9c400;}",
+    ".doc-section p{font-size:15px;color:#33333a;margin:0 0 8px;}",
+    ".doc-section strong{color:#111113;font-weight:700;}",
+    ".doc-footer{margin-top:48px;padding-top:16px;border-top:1px solid #e4e4e8;font-size:12px;color:#9a9aa1;}",
+    "@media print{body{background:#fff;}.doc-page{padding:0;max-width:none;}}"
+  ].join("");
+
+  function renderExportSections(md) {
+    var sections = parseSections(md);
+    if (!sections.length) return "<p>작성된 내용이 없습니다.</p>";
+    var html = "";
+    sections.forEach(function (sec, idx) {
+      html += '<section class="doc-section">';
+      html += '<span class="doc-section-badge">SECTION ' + String(idx + 1).padStart(2, "0") + '</span>';
+      if (sec.title) html += '<h2>' + inlineFormat(sec.title) + '</h2>';
+      var lis = sec.items.filter(function (i) { return i.type === "li"; });
+      var ps = sec.items.filter(function (i) { return i.type === "p"; });
+      if (lis.length) {
+        html += '<ul>' + lis.map(function (i) { return '<li>' + inlineFormat(i.text) + '</li>'; }).join('') + '</ul>';
       }
-      out.push(line);
+      ps.forEach(function (p) { html += '<p>' + inlineFormat(p.text) + '</p>'; });
+      html += '</section>';
     });
-    return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+    return html;
   }
 
-  function buildExportMarkdown() {
+  function buildExportHtml() {
     var dateLabel = new Date().toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric" });
     var modelLabel = MODEL_LABELS[state.model] || state.model;
-    var lines = ["# 요구사항 정의서", ""];
-    if (state.originalRequest) {
-      lines.push("> " + state.originalRequest.replace(/\n/g, " "));
-      lines.push("");
-    }
-    lines.push("| 항목 | 내용 |");
-    lines.push("| --- | --- |");
-    lines.push("| 생성일 | " + dateLabel + " |");
-    lines.push("| 분석 모델 | " + modelLabel + " |");
-    lines.push("| 도구 | IT Requirement Interviewer |");
-    lines.push("", "---", "");
-    lines.push(formatRequirementBody(state.finalMarkdown));
-    lines.push("");
-    return lines.join("\n");
+    var requestHtml = state.originalRequest
+      ? '<blockquote class="doc-request">' + escapeHtml(state.originalRequest) + '</blockquote>'
+      : '';
+    return (
+      '<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8">' +
+      '<title>요구사항 정의서</title><style>' + EXPORT_DOC_CSS + '</style></head><body>' +
+      '<main class="doc-page">' +
+        '<p class="doc-eyebrow">Requirement Specification</p>' +
+        '<h1>요구사항 정의서</h1>' +
+        requestHtml +
+        '<dl class="doc-meta">' +
+          '<div><dt>생성일</dt><dd>' + escapeHtml(dateLabel) + '</dd></div>' +
+          '<div><dt>분석 모델</dt><dd>' + escapeHtml(modelLabel) + '</dd></div>' +
+          '<div><dt>도구</dt><dd>IT Requirement Interviewer</dd></div>' +
+        '</dl>' +
+        '<hr>' +
+        renderExportSections(state.finalMarkdown) +
+        '<p class="doc-footer">IT Requirement Interviewer로 생성된 문서입니다.</p>' +
+      '</main></body></html>'
+    );
   }
 
-  function downloadMarkdown() {
-    var content = buildExportMarkdown();
-    var blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
+  function downloadRequirement() {
+    var content = buildExportHtml();
+    var blob = new Blob([content], { type: "text/html;charset=utf-8" });
     var url = URL.createObjectURL(blob);
     var stamp = new Date().toISOString().slice(0, 10);
     var a = document.createElement("a");
     a.href = url;
-    a.download = "requirement-spec-" + stamp + ".md";
+    a.download = "requirement-spec-" + stamp + ".html";
     document.body.appendChild(a);
     a.click();
     a.remove();
@@ -575,7 +610,7 @@
           '<button type="button" class="btn-outline" id="doneResetBtn">새 요청 시작하기</button>' +
         '</div>' +
       '</div>';
-    document.getElementById("downloadBtn").addEventListener("click", downloadMarkdown);
+    document.getElementById("downloadBtn").addEventListener("click", downloadRequirement);
     document.getElementById("doneResetBtn").addEventListener("click", resetSession);
   }
 
